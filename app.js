@@ -321,9 +321,14 @@ function updateTxPreview() {
   const clean = $("useFrame").checked && c.frame_pulses;
   if (!core.validTxFrequency(c.frequency_mhz)) { $("txInfo").textContent = `${c.frequency_mhz.toFixed(3)} MHz · receive-only with this module`; return; }
   const repeats = Number($("repeats").value), gap = Number($("gap").value);
-  if (!Number.isFinite(gap)) { $("txInfo").textContent = "Enter valid repeat / gap settings"; return; }
-  const total = core.replayDuration(clean ? c.frame_pulses : c.pulses, repeats, core.pyRound(gap * 1000));
-  $("txInfo").textContent = `${c.frequency_mhz.toFixed(3)} MHz · ${clean ? "clean frame" : "full burst"} · ${(total / 1000).toFixed(1)} ms total`;
+  if (!Number.isFinite(gap) || gap < 5 || gap > 1000) { $("txInfo").textContent = "Gap must be 5–1000 ms"; return; }
+  try {
+    const plan = core.planReplay(clean ? c.frame_pulses : c.pulses, repeats, core.pyRound(gap * 1000));
+    const total = plan.totalUs >= 1e6 ? `${(plan.totalUs / 1e6).toFixed(2)} s` : `${(plan.totalUs / 1000).toFixed(1)} ms`;
+    $("txInfo").textContent = `${c.frequency_mhz.toFixed(3)} MHz · ${clean ? "clean frame" : "full burst"} × ${plan.frames} · ${total} total`;
+  } catch (error) {
+    $("txInfo").textContent = error.message;
+  }
 }
 async function storeCapture(capture) {
   await library.save(capture);
@@ -388,16 +393,17 @@ function transmit() {
   try {
     core.validateTxFrequency(c.frequency_mhz);
     const repeats = Number($("repeats").value), gap = Number($("gap").value), power = Number($("power").value);
-    if (!(repeats >= 1 && repeats <= 10) || !Number.isFinite(gap) || gap < 5 || gap > 1000 || !core.POWERS.includes(power))
+    if (!core.REPEAT_CHOICES.includes(repeats) || !Number.isFinite(gap) || gap < 5 || gap > 1000 || !core.POWERS.includes(power))
       throw new Error("Choose valid transmitter settings.");
-    const values = $("useFrame").checked && c.frame_pulses ? c.frame_pulses : c.pulses;
-    if ((core.durationUs(values) + gap * 1000) * repeats > 10_000_000) throw new Error("Reduce repeats or gap to keep transmission below 10 seconds.");
-    const crc = core.pulseCrc(values);
+    const gapUs = core.pyRound(gap * 1000);
+    const plan = core.planReplay($("useFrame").checked && c.frame_pulses ? c.frame_pulses : c.pulses, repeats, gapUs);
+    const values = plan.pulses, crc = core.pulseCrc(values);
     prefs.replayProfiles[c.id] = { repeats, gap, power, clean: $("useFrame").checked };
     savePreferences();
-    s.pendingTx = { values, crc, mhz: c.frequency_mhz, retried: false,
-                    params: { repeats, gap_us: core.pyRound(gap * 1000), power_dbm: power, crc32: crc, frequency_mhz: c.frequency_mhz } };
-    log(`Preparing ${c.name} at ${c.frequency_mhz.toFixed(2)} MHz, ${repeats} repeat(s).`);
+    s.pendingTx = { values, crc, mhz: c.frequency_mhz, retried: false, frames: plan.frames, totalUs: plan.totalUs,
+                    params: { repeats: plan.repeats, gap_us: gapUs, power_dbm: power, crc32: crc, frequency_mhz: c.frequency_mhz } };
+    log(`Preparing ${c.name} at ${c.frequency_mhz.toFixed(2)} MHz, ${plan.frames} repeat(s)` +
+        (plan.copies > 1 ? ` (${plan.copies} per upload × ${plan.repeats}).` : "."));
     const held = s.boardSignal;
     if (held && held.crc === crc && Math.abs(held.mhz - c.frequency_mhz) < 0.0005) startTx();
     else upload();
@@ -418,7 +424,7 @@ function startTx() {
   const tx = s.pendingTx;
   s.busy = "transmitting";
   s.txId = send("transmit", tx.params);
-  s.deadline = Date.now() + 13000;
+  s.deadline = Date.now() + tx.totalUs / 1000 + 5000;
   refreshControls();
 }
 
@@ -532,9 +538,9 @@ function handleEvent(m) {
       footer("Transmitting the selected signal. Stop cancels the remaining output.");
       break;
     case "tx_done":
+      log(`Transmission complete: ${s.pendingTx?.frames ?? m.repeats} repeat(s) in ${m.elapsed_ms} ms.`);
       s.deadline = 0; s.busy = ""; s.pendingTx = null; mode("Listening");
       footer("Transmission complete. Receiver is listening again.");
-      log(`Transmission complete: ${m.repeats} repeat(s) in ${m.elapsed_ms} ms.`);
       break;
     case "cancelled":
       if (m.id !== s.cancelId || s.busy) return;
@@ -810,7 +816,7 @@ function populateSelect(id, values, value) {
 }
 
 function bind() {
-  populateSelect("repeats", [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 5);
+  populateSelect("repeats", core.REPEAT_CHOICES, 5);
   populateSelect("power", core.POWERS, 0);
   populateSelect("profile", Object.keys(core.PROFILES), prefs.profile in core.PROFILES ? prefs.profile : "Balanced");
   populateSelect("scope", Object.keys(SCOPES));

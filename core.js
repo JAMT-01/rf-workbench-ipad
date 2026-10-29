@@ -82,6 +82,43 @@ export function validatePulses(values) {
 export const durationUs = (pulses) => pulses.reduce((sum, p) => sum + Math.abs(p), 0);
 export const replayDuration = (pulses, repeats, gapUs) => (durationUs(pulses) + gapUs) * repeats;
 
+// ---------- longer replays without new firmware ----------
+
+export const REPEAT_CHOICES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20, 30, 40, 50, 75, 100, 150, 200];
+const BOARD_MAX_REPEATS = 10, BOARD_MAX_TX_US = 10_000_000;
+
+// The board replays one uploaded signal at most 10 times and 10 s in total.
+// More repeats are packed into the upload itself: `copies` frames joined by
+// their gap, replayed `repeats` times, is the same waveform as copies*repeats
+// frames. Returns { pulses, repeats, frames, copies, totalUs } for the board.
+export function planReplay(values, frames, gapUs) {
+  const frameUs = durationUs(values);
+  if ((frameUs + gapUs) * frames > BOARD_MAX_TX_US)
+    throw new Error(`${frames} repeats would last ${((frameUs + gapUs) * frames / 1e6).toFixed(1)} s; the board allows 10 s.`);
+  if (frames <= BOARD_MAX_REPEATS) return { pulses: values, repeats: frames, frames, copies: 1, totalUs: (frameUs + gapUs) * frames };
+  const perUpload = Math.min(Math.floor((MAX_PULSES + 1) / (values.length + 1)),
+                             Math.floor((MAX_DURATION_US + gapUs) / (frameUs + gapUs)));
+  // The most replays that divide the count exactly keeps the upload smallest (fastest over Bluetooth).
+  let repeats = 0;
+  for (let r = BOARD_MAX_REPEATS; r >= 1 && !repeats; r--) if (frames % r === 0 && frames / r <= perUpload) repeats = r;
+  if (!repeats) repeats = Math.ceil(frames / Math.max(1, perUpload));
+  const copies = Math.ceil(frames / repeats);
+  if (repeats > BOARD_MAX_REPEATS || copies > perUpload) throw new Error("This signal is too long to repeat that many times.");
+  const block = [];
+  const add = (v) => {  // a frame ending OFF simply lengthens the following gap
+    if (block.length && (block[block.length - 1] > 0) === (v > 0)) block[block.length - 1] += v;
+    else block.push(v);
+  };
+  for (let i = 0; i < copies; i++) {
+    if (i) add(-gapUs);
+    for (const p of values) add(p);
+  }
+  validatePulses(block);
+  const totalUs = (durationUs(block) + gapUs) * repeats;
+  if (totalUs > BOARD_MAX_TX_US) throw new Error("That many repeats would pass the board's 10 s limit.");
+  return { pulses: block, repeats, frames: copies * repeats, copies, totalUs };
+}
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export function newId() {
   if (globalThis.crypto?.randomUUID) return crypto.randomUUID();
