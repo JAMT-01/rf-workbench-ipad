@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b1220">
+<meta name="color-scheme" content="dark">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>RF Workbench</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b1220'/%3E%3Cpath d='M4 20h5V10h5v12h5V8h5v12h4' fill='none' stroke='%2336d6b0' stroke-width='2.5' stroke-linejoin='round'/%3E%3C/svg%3E">
+<style>
+:root {
+  --bg: #0b1220; --card: #142034; --plot: #0d1829; --fg: #eef4fc; --muted: #92a6bf;
+  --accent: #36d6b0; --accent-ink: #08251f; --border: #293b54; --button: #22334c;
+  --button-hi: #304765; --danger: #f07a7a; --warn: #ffd27b; --selected: #25433f;
+  --radius: 14px; --gap: 14px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--fg); font-size: 15px; line-height: 1.35;
+       padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left); }
+button, input, select, textarea { font: inherit; color: inherit; }
+h1, h2, p { margin: 0; }
+h1 { font-size: 22px; font-weight: 650; letter-spacing: -0.01em; }
+h2 { font-size: 12px; font-weight: 650; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.muted { color: var(--muted); }
+.mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 13px; }
+button {
+  min-height: 44px; padding: 0 16px; border: 0; border-radius: 10px; background: var(--button);
+  cursor: pointer; touch-action: manipulation; white-space: nowrap;
+}
+button:active:not(:disabled) { background: var(--button-hi); }
+button:disabled { opacity: 0.4; cursor: default; }
+button.accent { background: var(--accent); color: var(--accent-ink); font-weight: 650; }
+button.danger { background: #4a2430; color: #ffd6d6; }
+button.on { background: var(--selected); color: #a5f4df; }
+input, select, textarea {
+  min-height: 44px; padding: 8px 10px; background: var(--plot); border: 1px solid var(--border);
+  border-radius: 10px; font-size: 16px; min-width: 0;
+}
+input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+label.check { flex-direction: row; align-items: center; gap: 8px; font-size: 15px; color: var(--fg); min-height: 44px; }
+label.check input { min-height: 0; width: 22px; height: 22px; accent-color: var(--accent); }
+
+.top { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 14px 16px 8px; }
+.top .link { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.chip { font-size: 12px; font-weight: 700; letter-spacing: 0.08em; padding: 6px 10px; border-radius: 999px; background: var(--card); color: var(--muted); }
+.chip.ok { color: var(--accent); }
+.chip.busy { color: var(--warn); }
+#hint { color: var(--muted); font-size: 13px; margin-top: 2px; }
+.notice { margin: 0 16px 8px; padding: 12px 14px; border-radius: var(--radius); background: #3a2f17; color: #ffe6b0; }
+
+.grid { display: grid; gap: var(--gap); padding: 8px 16px 16px;
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-areas: "receiver" "capture" "wave" "transmit" "library"; }
+@media (min-width: 1000px) {
+  .grid { grid-template-columns: 330px minmax(0, 1fr);
+          grid-template-areas: "library receiver" "library capture" "library wave" "library transmit"; align-items: start; }
+  .library { position: sticky; top: 8px; max-height: calc(100vh - 140px); }
+}
+.card { background: var(--card); border-radius: var(--radius); padding: 14px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.receiver { grid-area: receiver; } .capture { grid-area: capture; } .wave { grid-area: wave; }
+.transmit { grid-area: transmit; } .library { grid-area: library; }
+.row { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
+.row > label { flex: 0 1 auto; }
+.row > label.grow { flex: 1 1 220px; }
+.status { color: var(--accent); font-weight: 600; font-size: 14px; }
+#freq { width: 120px; } #trigger { width: 90px; } #gap { width: 100px; }
+
+.rssi { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 14px; align-items: center; }
+.big { display: block; font-size: 30px; font-weight: 650; color: var(--accent); font-variant-numeric: tabular-nums; }
+canvas { display: block; width: 100%; background: var(--plot); border-radius: 10px; touch-action: none; }
+#rssiCanvas { height: 52px; }
+#waveCanvas { height: 210px; }
+.stats { font-variant-numeric: tabular-nums; }
+details > summary { cursor: pointer; color: var(--muted); min-height: 32px; display: flex; align-items: center; }
+details[open] > summary { margin-bottom: 8px; }
+
+#search { width: 100%; }
+.list { list-style: none; margin: 0; padding: 0; overflow-y: auto; flex: 1 1 auto; min-height: 120px; max-height: 420px; -webkit-overflow-scrolling: touch; }
+@media (min-width: 1000px) { .list { max-height: none; } }
+.list li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; padding: 10px 10px; border-radius: 10px; cursor: pointer; }
+.list li + li { margin-top: 2px; }
+.list li[aria-selected="true"] { background: var(--selected); color: #a5f4df; }
+.list .name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.list .meta { grid-column: 1 / -1; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.list li[aria-selected="true"] .meta { color: #7fd8c0; }
+.list .seen { font-size: 12px; color: var(--muted); align-self: center; }
+.list .empty { color: var(--muted); cursor: default; display: block; text-align: center; padding: 30px 10px; }
+.actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+footer { position: sticky; bottom: 0; display: flex; justify-content: space-between; align-items: center; gap: 10px;
+         padding: 10px 16px calc(10px + env(safe-area-inset-bottom)); background: rgba(11, 18, 32, 0.94);
+         border-top: 1px solid var(--border); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+#footer { color: var(--muted); font-size: 14px; overflow: hidden; text-overflow: ellipsis; }
+.log { margin: 0 16px 16px; background: var(--card); border-radius: var(--radius); padding: 10px 14px; max-height: 260px; overflow-y: auto; }
+.log pre { margin: 0; white-space: pre-wrap; color: var(--muted); font-size: 12px; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+
+dialog { background: var(--card); color: var(--fg); border: 1px solid var(--border); border-radius: 18px; padding: 18px;
+         width: min(960px, calc(100vw - 24px)); max-height: calc(100vh - 32px); overflow-y: auto; }
+dialog::backdrop { background: rgba(3, 7, 15, 0.7); }
+dialog .card-head { margin-bottom: 12px; }
+dialog h3 { margin: 0; font-size: 18px; }
+dialog pre { white-space: pre-wrap; background: var(--plot); padding: 12px; border-radius: 10px; font-size: 13px; margin: 0; }
+dialog textarea { width: 100%; min-height: 96px; resize: vertical; }
+.dialog-body { display: flex; flex-direction: column; gap: 12px; }
+#spectrum { height: 240px; }
+.progress { height: 6px; background: var(--plot); border-radius: 3px; overflow: hidden; }
+.progress > div { height: 100%; width: 0; background: var(--accent); transition: width 0.15s; }
+.peaks { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.peaks td, .peaks th { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border); font-size: 14px; }
+.peaks th { color: var(--muted); font-weight: 500; font-size: 12px; }
+.peaks tr[aria-selected="true"] td { background: var(--selected); color: #a5f4df; }
+.instructions { font-weight: 600; }
+#simPress { position: fixed; right: 16px; bottom: calc(76px + env(safe-area-inset-bottom)); z-index: 5; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45); }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; font-size: 14px; }
+.kv dt { color: var(--muted); } .kv dd { margin: 0; font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+<header class="top">
+  <div>
+    <h1>RF Workbench</h1>
+    <p id="hint">1 Find or enter frequency → 2 Capture → 3 Inspect and replay</p>
+  </div>
+  <div class="link">
+    <span id="linkChip" class="chip">DISCONNECTED</span>
+    <button id="connectBtn" class="accent">Connect</button>
+    <button id="demoBtn">Demo</button>
+    <button id="infoBtn">Device / help</button>
+  </div>
+</header>
+<div id="notice" class="notice" hidden></div>
+
+<main class="grid">
+  <section class="card library" aria-label="Signal library">
+    <div class="card-head"><h2>Library</h2><span id="libCount" class="muted"></span></div>
+    <input id="search" type="search" placeholder="Search name, notes or MHz" autocomplete="off">
+    <ul id="captureList" class="list" role="listbox" aria-label="Saved signals"></ul>
+    <div class="actions">
+      <button id="renameBtn">Rename</button>
+      <button id="detailsBtn">Details / notes</button>
+      <button id="listenBtn">Listen here</button>
+      <button id="exportBtn">Export</button>
+      <button id="archiveBtn">Archive</button>
+      <button id="undoBtn">Undo archive</button>
+      <button id="importBtn">Import</button>
+      <button id="exportAllBtn">Export all</button>
+    </div>
+    <input id="importFile" type="file" accept=".json,application/json" multiple hidden>
+  </section>
+
+  <section class="card receiver" aria-label="Receiver">
+    <div class="card-head"><h2>Receiver</h2><span id="modeLabel" class="status">Ready when you are</span></div>
+    <div class="row">
+      <label>Frequency · MHz <input id="freq" inputmode="decimal" value="433.920" autocomplete="off"></label>
+      <label>Bandwidth · kHz
+        <select id="bw"><option>203</option><option>325</option><option selected>650</option></select></label>
+      <label>Preset <select id="preset"><option value="">Choose…</option></select></label>
+      <button id="tuneBtn">Tune</button>
+      <button id="findBtn">Find frequency</button>
+    </div>
+    <div class="rssi">
+      <div><span id="rssiValue" class="big">— dBm</span><span id="detectorLine" class="muted">Noise — · trigger —</span></div>
+      <canvas id="rssiCanvas" aria-label="Signal strength history"></canvas>
+    </div>
+  </section>
+
+  <section class="card capture" aria-label="Capture">
+    <div class="card-head"><h2>Capture</h2><span id="autoStats" class="muted stats">New 0 · repeats 0 · filtered 0</span></div>
+    <div class="row">
+      <label class="grow">Name, or Auto Catch prefix <input id="name" maxlength="80" placeholder="Optional" autocomplete="off"></label>
+      <label>Trigger · dBm <input id="trigger" inputmode="numeric" value="-70" autocomplete="off"></label>
+    </div>
+    <div class="row">
+      <button id="recordBtn" class="accent">Record</button>
+      <button id="autoBtn">Auto Catch</button>
+      <label>Sensitivity
+        <select id="sensitivity"><option>Sensitive</option><option selected>Balanced</option><option>Strong only</option></select></label>
+      <button id="stopBtn" class="danger">Stop</button>
+    </div>
+    <details>
+      <summary>Recording settings</summary>
+      <div class="row">
+        <label>Receive profile <select id="profile"></select></label>
+        <label>Auto Catch library
+          <select id="policy"><option>Group matching signals</option><option>Save every capture</option></select></label>
+        <button id="filteredBtn">Save last filtered</button>
+      </div>
+    </details>
+  </section>
+
+  <section class="card wave" aria-label="Waveform">
+    <div class="card-head"><h2>Waveform</h2><span id="summary" class="muted">Select a saved capture to inspect its waveform.</span></div>
+    <canvas id="waveCanvas" aria-label="Signal waveform"></canvas>
+    <div class="row">
+      <button id="zoomOut" aria-label="Zoom out">−</button>
+      <button id="zoomIn" aria-label="Zoom in">+</button>
+      <button id="fitBtn">Fit</button>
+      <button id="waveToggle">Full burst</button>
+      <span id="inspect" class="muted mono">Tap the waveform to inspect an interval. Pinch to zoom, drag to pan.</span>
+    </div>
+  </section>
+
+  <section class="card transmit" aria-label="Transmit">
+    <div class="card-head"><h2>Transmit</h2><span id="txInfo" class="muted">Select a signal from your library</span></div>
+    <div class="row">
+      <label>Repeats <select id="repeats"></select></label>
+      <label>Gap · ms <input id="gap" inputmode="decimal" value="20" autocomplete="off"></label>
+      <label>Power · dBm <select id="power"></select></label>
+      <label class="check"><input id="useFrame" type="checkbox"> Use clean frame</label>
+      <button id="txBtn" class="accent">Transmit selected</button>
+    </div>
+  </section>
+</main>
+
+<section id="logPanel" class="log" hidden aria-label="Activity log"><pre id="log"></pre></section>
+<footer>
+  <span id="footer">Connect the ESP32 to get started.</span>
+  <button id="logToggle">Activity</button>
+</footer>
+<button id="simPress" class="accent" hidden>Press simulated remote</button>
+
+<dialog id="finder" aria-labelledby="finderTitle">
+  <div class="card-head"><h3 id="finderTitle">Find a remote's frequency</h3><button id="finderClose">Close</button></div>
+  <div class="dialog-body">
+    <div class="row">
+      <label class="grow">Range <select id="scope"></select></label>
+    </div>
+    <p id="scopeNote" class="muted"></p>
+    <p id="finderInstructions" class="instructions">1. Release the remote button, then tap Learn background.</p>
+    <div class="progress"><div id="finderBar"></div></div>
+    <p id="finderProgress" class="muted">Waiting to learn the background.</p>
+    <canvas id="spectrum" aria-label="Spectrum"></canvas>
+    <table class="peaks"><thead><tr><th>Frequency · MHz</th><th>Above background</th><th>Peak RSSI</th><th>Result</th></tr></thead>
+      <tbody id="peakRows"></tbody></table>
+    <p id="finderResult" class="muted">No frequency selected</p>
+    <div class="row">
+      <button id="learnBtn">1. Learn background</button>
+      <button id="searchBtn">2. Search</button>
+      <button id="refineBtn">Refine selected</button>
+      <button id="useFreqBtn">Use frequency</button>
+      <button id="useAutoBtn" class="accent">Use &amp; Auto Catch</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="details" aria-labelledby="detailsTitle">
+  <div class="card-head"><h3 id="detailsTitle">Signal details</h3><button id="detailsClose">Close</button></div>
+  <div class="dialog-body">
+    <pre id="report"></pre>
+    <label>Notes <textarea id="notes" maxlength="4000"></textarea></label>
+    <div class="row">
+      <button id="saveNotes" class="accent">Save notes</button>
+      <button id="csvBtn">Export timings (CSV)</button>
+      <button id="copyJson">Copy signal JSON</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="info" aria-labelledby="infoTitle">
+  <div class="card-head"><h3 id="infoTitle">Device and help</h3><button id="infoClose">Close</button></div>
+  <div class="dialog-body">
+    <dl id="deviceInfo" class="kv"></dl>
+    <p class="muted">Pairing: the first connection asks for the 6-digit passkey set in <span class="mono">CC1101_Workbench/config.h</span>.
+      If pairing fails after re-flashing, open iPad Settings › Bluetooth, forget “RF Workbench”, and connect again.</p>
+    <p class="muted">Transmit timing resolution is 1 µs; this is not a calibrated accuracy claim. Timing consistency measures repeated
+      pulse structure, not decoder success. Module-rated transmit range: 387–464 MHz; other chip bands are experimental receive-only.
+      Replaying a rolling-code remote is normally rejected by its receiver. Use with your own devices, or with permission.</p>
+    <p class="muted">Auto Catch runs in this page: keep the iPad awake and this tab in front while it watches. Signals are stored in this
+      browser; use Export all for a backup.</p>
+  </div>
+</dialog>
+
+<dialog id="ask" aria-labelledby="askTitle">
+  <form method="dialog" class="dialog-body">
+    <h3 id="askTitle"></h3>
+    <input id="askInput" maxlength="80" autocomplete="off">
+    <div class="row"><button value="cancel">Cancel</button><button id="askOk" value="ok" class="accent">OK</button></div>
+  </form>
+</dialog>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>

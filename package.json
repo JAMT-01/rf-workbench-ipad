@@ -1,0 +1,6 @@
+{
+  "name": "rf-workbench-ipad",
+  "private": true,
+  "type": "module",
+  "description": "RF Workbench for iPad (Web Bluetooth). No build step; see README-iPad.md."
+}
